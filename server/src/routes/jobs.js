@@ -116,5 +116,80 @@ router.post("/", requireUser, async (req, res) => {
   }
 });
 
+/** PATCH /api/jobs/:id  (hirer owner only) */
+router.patch("/:id", requireUser, async (req, res) => {
+  try {
+    const uid = req?.user?.uid || req?.firebase?.uid;
+    const me = await User.findOne({ uid }).select("_id role isVerified").lean();
+    if (!me) return res.status(401).json({ error: "User not found" });
+    if (!me.isVerified) return res.status(403).json({ error: "Account not verified" });
+    if (me.role !== "hirer") return res.status(403).json({ error: "Only hirers can edit jobs" });
+
+    const job = await Job.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    if (String(job.hirerId) !== String(me._id)) {
+      return res.status(403).json({ error: "Not your job" });
+    }
+
+    // Whitelist editable fields
+    const {
+      title,
+      description,
+      category,
+      location,
+      budgetMin,
+      budgetMax,
+      jobType,          // "one_time" | "ongoing"
+      experienceLevel,  // "entry" | "intermediate" | "expert"
+      deadline,
+      status,           // "open" | "in_progress" | "completed"
+      skills,
+      attachments,
+    } = req.body || {};
+
+    if (title !== undefined) job.title = title;
+    if (description !== undefined) job.description = description;
+    if (category !== undefined) job.category = category;
+    if (location !== undefined) job.location = location;
+    if (budgetMin !== undefined) job.budgetMin = budgetMin;
+    if (budgetMax !== undefined) job.budgetMax = budgetMax;
+    if (jobType !== undefined) job.jobType = jobType;
+    if (experienceLevel !== undefined) job.experienceLevel = experienceLevel;
+    if (deadline !== undefined) job.deadline = deadline ? new Date(deadline) : undefined;
+    if (status !== undefined) job.status = status;
+    if (Array.isArray(skills)) job.skills = skills;
+    if (Array.isArray(attachments)) job.attachments = attachments;
+
+    await job.save();
+    return res.json({ ok: true, job });
+  } catch (e) {
+    console.error("PATCH /api/jobs/:id error:", e);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
+/** DELETE /api/jobs/:id  (hirer owner only) */
+router.delete("/:id", requireUser, async (req, res) => {
+  try {
+    const uid = req?.user?.uid || req?.firebase?.uid;
+    const me = await User.findOne({ uid }).select("_id role isVerified").lean();
+    if (!me) return res.status(401).json({ error: "User not found" });
+    if (!me.isVerified) return res.status(403).json({ error: "Account not verified" });
+    if (me.role !== "hirer") return res.status(403).json({ error: "Only hirers can delete jobs" });
+
+    const job = await Job.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    if (String(job.hirerId) !== String(me._id)) {
+      return res.status(403).json({ error: "Not your job" });
+    }
+
+    await job.deleteOne();
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("DELETE /api/jobs/:id error:", e);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
 
 export default router;

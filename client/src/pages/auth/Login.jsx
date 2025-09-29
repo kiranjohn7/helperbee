@@ -10,6 +10,7 @@ import {
   browserLocalPersistence,
   browserSessionPersistence,
 } from "firebase/auth";
+import { Alert, Modal, message } from "antd";
 import { auth, googleProvider } from "../../lib/firebase";
 import { authedFetch } from "../../lib/utils";
 
@@ -23,7 +24,9 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
-  function mapError(code, message) {
+  const [msgApi, msgCtx] = message.useMessage();
+
+  function mapError(code, messageText) {
     switch (code) {
       case "auth/invalid-email":
         return "Please enter a valid email address.";
@@ -38,24 +41,20 @@ export default function Login() {
       case "auth/operation-not-allowed":
         return "This sign-in method is disabled in Firebase Console.";
       default:
-        return message || "Something went wrong. Please try again.";
+        return messageText || "Something went wrong. Please try again.";
     }
   }
 
-  // keep this clean: no recursion, no token logic here
   async function afterAuthRedirect() {
-    const { user } = await authedFetch("/api/auth/me"); // authedFetch returns parsed JSON
+    const { user } = await authedFetch("/api/auth/me"); // parsed JSON
 
-    if (!user) {
-      return navigate("/auth/register?onboard=1");
-    }
-    if (!user.isVerified) {
-      return navigate("/auth/register?verify=1");
-    }
+    if (!user) return navigate("/auth/register?onboard=1");
+    if (!user.isVerified) return navigate("/auth/register?verify=1");
+
     navigate(user.role === "worker" ? "/dashboard/worker" : "/dashboard/hirer");
   }
 
-  // Email/password
+  // Email / Password
   async function loginEmail(e) {
     e.preventDefault();
     setErr("");
@@ -71,12 +70,14 @@ export default function Login() {
       );
       await signInWithEmailAndPassword(auth, email, password);
 
-      // ✅ force fresh token BEFORE we call /me
+      // ensure fresh token for /me
       await auth.currentUser?.getIdToken(true);
 
       await afterAuthRedirect();
     } catch (e) {
-      setErr(mapError(e.code, e.message));
+      const msg = mapError(e.code, e.message);
+      setErr(msg);
+      msgApi.error(msg);
     } finally {
       setLoading(false);
     }
@@ -93,18 +94,21 @@ export default function Login() {
       );
       await signInWithPopup(auth, googleProvider);
 
-      // ✅ force fresh token BEFORE /me
       await auth.currentUser?.getIdToken(true);
-
       await afterAuthRedirect();
     } catch (e) {
-      // Fallback to redirect if popup fails
-      setErr(mapError(e.code, e.message));
+      const msg = mapError(e.code, e.message);
+      setErr(msg);
+      msgApi.warning(msg);
+
+      // fallback to redirect
       try {
         await signInWithRedirect(auth, googleProvider);
-        // getRedirectResult() effect will handle navigation after return
+        // getRedirectResult effect will handle after return
       } catch (e2) {
-        setErr(mapError(e2.code, e2.message));
+        const msg2 = mapError(e2.code, e2.message);
+        setErr(msg2);
+        msgApi.error(msg2);
         setLoading(false);
       }
     }
@@ -116,33 +120,52 @@ export default function Login() {
       try {
         const res = await getRedirectResult(auth);
         if (res?.user) {
-          await auth.currentUser?.getIdToken(true); // ✅ fresh token
+          await auth.currentUser?.getIdToken(true);
           await afterAuthRedirect();
         }
       } catch (e) {
-        console.error("Google redirect error", e);
-        setErr(mapError(e.code, e.message));
+        const msg = mapError(e.code, e.message);
+        setErr(msg);
+        msgApi.error(msg);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function resetPassword() {
+  // Password reset with confirm dialog
+  function resetPassword() {
     setErr("");
-    if (!email) {
-      setErr("Enter your email above to receive a reset link.");
+    if (!email.trim()) {
+      const msg = "Enter your email above to receive a reset link.";
+      setErr(msg);
+      msgApi.info(msg);
       return;
     }
-    try {
-      await sendPasswordResetEmail(auth, email);
-      alert("Password reset email sent. Check your inbox.");
-    } catch (e) {
-      setErr(mapError(e.code, e.message));
-    }
+
+    Modal.confirm({
+      title: "Send password reset link?",
+      content: `We’ll email a reset link to ${email}.`,
+      okText: "Send",
+      cancelText: "Cancel",
+      onOk: async () => {
+        try {
+          await sendPasswordResetEmail(auth, email);
+          msgApi.success("Password reset email sent. Check your inbox.");
+        } catch (e) {
+          const msg = mapError(e.code, e.message);
+          setErr(msg);
+          msgApi.error(msg);
+          throw e;
+        }
+      },
+    });
   }
 
   return (
     <div className="min-h-[calc(100vh-64px)] grid place-items-center bg-gradient-to-b from-white via-indigo-50 to-white">
+      {/* antd message portal */}
+      {msgCtx}
+
       <div className="w-full max-w-md bg-white border rounded-2xl shadow-sm p-6">
         <div className="text-center">
           <div className="inline-flex items-center gap-2 rounded-full bg-indigo-100 px-3 py-1 text-xs font-medium text-indigo-700 ring-1 ring-indigo-200">
@@ -150,37 +173,32 @@ export default function Login() {
           </div>
         </div>
 
-        <h1 className="mt-3 text-2xl font-semibold text-center">
-          Welcome back
-        </h1>
+        <h1 className="mt-3 text-2xl font-semibold text-center">Welcome back</h1>
         <p className="mt-1 text-sm text-gray-600 text-center">
           Sign in to continue. No hidden fees—ever.
         </p>
 
         {err ? (
-          <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {err}
+          <div className="mt-4">
+            <Alert type="error" showIcon message={err} />
           </div>
         ) : null}
 
-        <form
-          onSubmit={loginEmail}
-          className="mt-6 space-y-4"
-          autoComplete="on"
-        >
+        <form onSubmit={loginEmail} className="mt-6 space-y-4" autoComplete="on">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Email
             </label>
             <input
               className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-              placeholder="you@example.com"
+              placeholder="Enter your email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               inputMode="email"
               autoComplete="email"
+              disabled={loading}
             />
           </div>
 
@@ -193,6 +211,7 @@ export default function Login() {
                 type="button"
                 className="text-xs text-indigo-700 hover:underline"
                 onClick={() => setShowPw((s) => !s)}
+                disabled={loading}
               >
                 {showPw ? "Hide" : "Show"}
               </button>
@@ -206,6 +225,7 @@ export default function Login() {
               required
               minLength={6}
               autoComplete="current-password"
+              disabled={loading}
             />
           </div>
 
@@ -215,6 +235,7 @@ export default function Login() {
                 type="checkbox"
                 checked={remember}
                 onChange={(e) => setRemember(e.target.checked)}
+                disabled={loading}
               />
               Remember me
             </label>
@@ -222,6 +243,7 @@ export default function Login() {
               type="button"
               className="text-sm text-indigo-700 hover:underline"
               onClick={resetPassword}
+              disabled={loading}
             >
               Forgot password?
             </button>
