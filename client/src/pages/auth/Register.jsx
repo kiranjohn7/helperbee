@@ -1,3 +1,4 @@
+// client/src/pages/auth/Register.jsx
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { auth, googleProvider } from "../../lib/firebase";
@@ -145,12 +146,24 @@ export default function Register() {
 
         {/* Stepper */}
         <div className="mt-5 grid grid-cols-2 text-xs">
-          <div className={`flex items-center justify-center gap-2 py-2 rounded-l-lg border ${!otpSent ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-700"}`}>
-            <span className="h-5 w-5 grid place-items-center rounded-full border">{!otpSent ? "1" : "✓"}</span>
+          <div
+            className={`flex items-center justify-center gap-2 py-2 rounded-l-lg border ${
+              !otpSent ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-700"
+            }`}
+          >
+            <span className="h-5 w-5 grid place-items-center rounded-full border">
+              {!otpSent ? "1" : "✓"}
+            </span>
             <span>Account</span>
           </div>
-          <div className={`flex items-center justify-center gap-2 py-2 rounded-r-lg border ${otpSent ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-700"}`}>
-            <span className="h-5 w-5 grid place-items-center rounded-full border">{otpSent ? "2" : " "}</span>
+          <div
+            className={`flex items-center justify-center gap-2 py-2 rounded-r-lg border ${
+              otpSent ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-700"
+            }`}
+          >
+            <span className="h-5 w-5 grid place-items-center rounded-full border">
+              {otpSent ? "2" : " "}
+            </span>
             <span>Verify</span>
           </div>
         </div>
@@ -174,7 +187,7 @@ export default function Register() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Full name</label>
               <input
                 className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                placeholder="Your name"
+                placeholder="Enter your name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -186,7 +199,7 @@ export default function Register() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
               <input
                 className="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                placeholder="you@example.com"
+                placeholder="Enter your email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -219,16 +232,32 @@ export default function Register() {
               />
             </div>
 
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input type="radio" checked={role === "hirer"} onChange={() => setRole("hirer")} />
-                Hirer
-              </label>
-              <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input type="radio" checked={role === "worker"} onChange={() => setRole("worker")} />
-                Worker
-              </label>
-            </div>
+            {/* Professional Role Selector */}
+            <fieldset className="mt-2">
+              <legend className="block text-sm font-medium text-gray-700 mb-2">
+                Choose your role
+              </legend>
+
+              <div role="radiogroup" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <RoleCard
+                  id="role-hirer"
+                  title="Hirer"
+                  description="Post jobs and manage applicants."
+                  selected={role === "hirer"}
+                  onSelect={() => setRole("hirer")}
+                  icon="🧑‍💼"
+                />
+
+                <RoleCard
+                  id="role-worker"
+                  title="Worker"
+                  description="Discover gigs and send requests."
+                  selected={role === "worker"}
+                  onSelect={() => setRole("worker")}
+                  icon="🛠️"
+                />
+              </div>
+            </fieldset>
 
             <button
               type="submit"
@@ -296,13 +325,52 @@ export default function Register() {
             </button>
 
             <p className="text-center text-xs text-gray-500">
-              By continuing you agree to our{" "}
-              <span className="underline">Terms</span> and{" "}
+              By continuing you agree to our <span className="underline">Terms</span> and{" "}
               <span className="underline">Privacy Policy</span>.
             </p>
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+/* ----- Small role-card component for a professional radio UI ----- */
+function RoleCard({ id, title, description, selected, onSelect, icon }) {
+  return (
+    <label
+      htmlFor={id}
+      className={[
+        "relative cursor-pointer rounded-xl border bg-white p-4 transition",
+        selected
+          ? "border-indigo-600 ring-2 ring-indigo-200"
+          : "border-gray-200 hover:border-gray-300",
+      ].join(" ")}
+    >
+      <input
+        id={id}
+        type="radio"
+        name="role"
+        value={title.toLowerCase()}
+        checked={selected}
+        onChange={onSelect}
+        className="sr-only"
+        aria-checked={selected}
+      />
+      <div className="flex items-start gap-3">
+        <div className="text-xl leading-none">{icon}</div>
+        <div>
+          <div className="font-medium text-gray-900">{title}</div>
+          <div className="text-sm text-gray-600">{description}</div>
+        </div>
+      </div>
+
+      {/* checkmark badge when selected */}
+      {selected && (
+        <span className="absolute right-3 top-3 inline-flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-white text-[10px]">
+          ✓
+        </span>
+      )}
+    </label>
   );
 }
