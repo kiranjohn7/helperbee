@@ -20,7 +20,9 @@ router.use((req, res, next) => {
  */
 router.get("/", async (req, res) => {
   try {
-    const mine = ["1", "true", "yes"].includes(String(req.query.mine).toLowerCase());
+    const mine = ["1", "true", "yes"].includes(
+      String(req.query.mine).toLowerCase()
+    );
 
     // Private branch: list only this hirer's jobs
     if (mine) {
@@ -32,7 +34,9 @@ router.get("/", async (req, res) => {
         const me = await User.findOne({ uid }).select("_id role").lean();
         if (!me) return res.status(404).json({ error: "User not found" });
         if (me.role !== "hirer") {
-          return res.status(403).json({ error: "Only hirers can view their jobs" });
+          return res
+            .status(403)
+            .json({ error: "Only hirers can view their jobs" });
         }
 
         const jobs = await Job.find({ hirerId: me._id })
@@ -72,8 +76,10 @@ router.post("/", requireUser, async (req, res) => {
 
     const me = await User.findOne({ uid });
     if (!me) return res.status(404).json({ error: "User not found" });
-    if (!me.isVerified) return res.status(403).json({ error: "Account not verified" });
-    if (me.role !== "hirer") return res.status(403).json({ error: "Only hirers can post jobs" });
+    if (!me.isVerified)
+      return res.status(403).json({ error: "Account not verified" });
+    if (me.role !== "hirer")
+      return res.status(403).json({ error: "Only hirers can post jobs" });
 
     const {
       title,
@@ -82,15 +88,17 @@ router.post("/", requireUser, async (req, res) => {
       location,
       budgetMin,
       budgetMax,
-      jobType,          // "one_time" | "ongoing"
-      experienceLevel,  // "entry" | "intermediate" | "expert"
+      jobType, // "one_time" | "ongoing"
+      experienceLevel, // "entry" | "intermediate" | "expert"
       deadline,
       skills = [],
       attachments = [],
     } = req.body || {};
 
     if (!title?.trim() || !description?.trim()) {
-      return res.status(400).json({ error: "Title and description are required" });
+      return res
+        .status(400)
+        .json({ error: "Title and description are required" });
     }
 
     const job = await Job.create({
@@ -122,8 +130,10 @@ router.patch("/:id", requireUser, async (req, res) => {
     const uid = req?.user?.uid || req?.firebase?.uid;
     const me = await User.findOne({ uid }).select("_id role isVerified").lean();
     if (!me) return res.status(401).json({ error: "User not found" });
-    if (!me.isVerified) return res.status(403).json({ error: "Account not verified" });
-    if (me.role !== "hirer") return res.status(403).json({ error: "Only hirers can edit jobs" });
+    if (!me.isVerified)
+      return res.status(403).json({ error: "Account not verified" });
+    if (me.role !== "hirer")
+      return res.status(403).json({ error: "Only hirers can edit jobs" });
 
     const job = await Job.findById(req.params.id);
     if (!job) return res.status(404).json({ error: "Job not found" });
@@ -139,10 +149,10 @@ router.patch("/:id", requireUser, async (req, res) => {
       location,
       budgetMin,
       budgetMax,
-      jobType,          // "one_time" | "ongoing"
-      experienceLevel,  // "entry" | "intermediate" | "expert"
+      jobType, // "one_time" | "ongoing"
+      experienceLevel, // "entry" | "intermediate" | "expert"
       deadline,
-      status,           // "open" | "in_progress" | "completed"
+      status, // "open" | "in_progress" | "completed"
       skills,
       attachments,
     } = req.body || {};
@@ -155,7 +165,8 @@ router.patch("/:id", requireUser, async (req, res) => {
     if (budgetMax !== undefined) job.budgetMax = budgetMax;
     if (jobType !== undefined) job.jobType = jobType;
     if (experienceLevel !== undefined) job.experienceLevel = experienceLevel;
-    if (deadline !== undefined) job.deadline = deadline ? new Date(deadline) : undefined;
+    if (deadline !== undefined)
+      job.deadline = deadline ? new Date(deadline) : undefined;
     if (status !== undefined) job.status = status;
     if (Array.isArray(skills)) job.skills = skills;
     if (Array.isArray(attachments)) job.attachments = attachments;
@@ -174,8 +185,10 @@ router.delete("/:id", requireUser, async (req, res) => {
     const uid = req?.user?.uid || req?.firebase?.uid;
     const me = await User.findOne({ uid }).select("_id role isVerified").lean();
     if (!me) return res.status(401).json({ error: "User not found" });
-    if (!me.isVerified) return res.status(403).json({ error: "Account not verified" });
-    if (me.role !== "hirer") return res.status(403).json({ error: "Only hirers can delete jobs" });
+    if (!me.isVerified)
+      return res.status(403).json({ error: "Account not verified" });
+    if (me.role !== "hirer")
+      return res.status(403).json({ error: "Only hirers can delete jobs" });
 
     const job = await Job.findById(req.params.id);
     if (!job) return res.status(404).json({ error: "Job not found" });
@@ -191,5 +204,64 @@ router.delete("/:id", requireUser, async (req, res) => {
   }
 });
 
+// ...existing imports and routes...
+
+/** Worker marks complete (does NOT finish job; just a signal) */
+router.patch("/:id/worker-complete", requireUser, async (req, res) => {
+  try {
+    const uid = req.user.uid;
+    const me = await User.findOne({ uid }).select("_id role isVerified").lean();
+    if (!me || me.role !== "worker" || !me.isVerified) {
+      return res.status(403).json({ error: "Workers only" });
+    }
+
+    const job = await Job.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    if (String(job.workerId) !== String(me._id)) {
+      return res
+        .status(403)
+        .json({ error: "You are not assigned to this job" });
+    }
+    if (job.status !== "in_progress") {
+      return res.status(400).json({ error: "Job is not in progress" });
+    }
+
+    job.workerCompletedAt = new Date();
+    await job.save();
+    return res.json({ ok: true, job });
+  } catch (e) {
+    console.error("PATCH /jobs/:id/worker-complete", e);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
+/** Hirer confirms completion (can complete regardless of worker click) */
+router.patch("/:id/complete", requireUser, async (req, res) => {
+  try {
+    const uid = req.user.uid;
+    const me = await User.findOne({ uid }).select("_id role isVerified").lean();
+    if (!me || me.role !== "hirer" || !me.isVerified) {
+      return res.status(403).json({ error: "Hirers only" });
+    }
+
+    const job = await Job.findById(req.params.id);
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    if (String(job.hirerId) !== String(me._id)) {
+      return res.status(403).json({ error: "Not your job" });
+    }
+    if (job.status === "completed") {
+      return res.json({ ok: true, job });
+    }
+
+    job.status = "completed";
+    job.hirerCompletedAt = new Date();
+    job.completedAt = new Date();
+    await job.save();
+    return res.json({ ok: true, job });
+  } catch (e) {
+    console.error("PATCH /jobs/:id/complete", e);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
 
 export default router;

@@ -7,11 +7,12 @@ export default function Chat() {
   const { conversationId } = useParams();
   const [me, setMe] = useState(null);
 
-  useEffect(() => { (async () => {
-    const res = await authedFetch("/api/auth/me");
-    const json = await res.json();
-    setMe(json.user || null);
-  })(); }, []);
+  useEffect(() => {
+    (async () => {
+      const data = await authedFetch("/api/auth/me");
+      setMe(data.user || null);
+    })();
+  }, []);
 
   if (!me) return <div>Loading...</div>;
   return (

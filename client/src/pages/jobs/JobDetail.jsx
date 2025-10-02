@@ -1,8 +1,14 @@
 // client/src/pages/jobs/JobDetail.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Modal, message } from "antd";
+import { Modal, message, Tag } from "antd";
 import { authedFetch, API_URL, formatINR } from "../../lib/utils";
+
+const pretty = (s) => {
+  if (!s) return "-";
+  const t = String(s).replace(/_/g, " ");
+  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); // "one_time" -> "One time"
+};
 
 export default function JobDetail() {
   const { id } = useParams();
@@ -13,10 +19,14 @@ export default function JobDetail() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
-  // worker application
+  // Applications (hirer-only)
+  const [appsLoading, setAppsLoading] = useState(false);
+  const [applications, setApplications] = useState([]);
+
+  // Worker compose
   const [coverLetter, setCoverLetter] = useState("");
 
-  // hirer edit
+  // Hirer edit
   const [edit, setEdit] = useState(false);
   const [form, setForm] = useState({
     title: "",
@@ -31,10 +41,11 @@ export default function JobDetail() {
     status: "open",
     skills: "",
   });
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
-  // Load job (public) + my profile (optional)
+  // flags
+  const [saving, setSaving] = useState(false);
+
+  // Load job + me
   useEffect(() => {
     const ctrl = new AbortController();
     let alive = true;
@@ -69,17 +80,18 @@ export default function JobDetail() {
       }
     })();
 
-    return () => {
-      alive = false;
-      ctrl.abort();
-    };
+    return () => { alive = false; ctrl.abort(); };
   }, [id]);
 
-  // Owner check
-  const isOwner = useMemo(() => {
-    if (!job || !me) return false;
-    return String(job.hirerId) === String(me._id) && me.role === "hirer";
-  }, [job, me]);
+  // Ownership / assignment
+  const isOwner = useMemo(
+    () => !!job && !!me && String(job.hirerId) === String(me._id) && me.role === "hirer",
+    [job, me]
+  );
+  const isAssignedWorker = useMemo(
+    () => !!job && !!me && String(job.workerId) === String(me._id) && me.role === "worker",
+    [job, me]
+  );
 
   // Seed edit form
   useEffect(() => {
@@ -100,7 +112,28 @@ export default function JobDetail() {
     }
   }, [job, isOwner, edit]);
 
-  // ——— Actions (now with AntD dialogs) ———
+  // Load applications when owner
+  useEffect(() => {
+    if (!isOwner) return;
+    let alive = true;
+    (async () => {
+      setAppsLoading(true);
+      try {
+        const data = await authedFetch(`/api/applications?job=${id}`);
+        if (!alive) return;
+        setApplications(Array.isArray(data.applications) ? data.applications : []);
+      } catch (e) {
+        console.error("Load applications error:", e);
+        if (!alive) return;
+        setApplications([]);
+      } finally {
+        if (alive) setAppsLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [isOwner, id]);
+
+  // ——— Actions ———
 
   function apply() {
     if (!coverLetter.trim()) {
@@ -109,9 +142,8 @@ export default function JobDetail() {
     }
     Modal.confirm({
       title: "Send application?",
-      content: "We’ll share your cover letter with the hirer.",
+      content: "We’ll share your note with the hirer.",
       okText: "Send",
-      cancelText: "Cancel",
       onOk: async () => {
         try {
           await authedFetch("/api/applications", {
@@ -119,24 +151,112 @@ export default function JobDetail() {
             body: JSON.stringify({ jobId: id, coverLetter }),
           });
           setCoverLetter("");
-          message.success("Application sent ✨");
+          message.success("Application sent");
         } catch (e) {
           message.error(e.message || "Failed to apply");
-          // rethrow so Modal shows loading state correctly
           throw e;
         }
       },
     });
   }
 
+  function accept(appId) {
+    Modal.confirm({
+      title: "Accept this request?",
+      content: "This will assign the worker and start a chat.",
+      okText: "Accept",
+      onOk: async () => {
+        try {
+          const data = await authedFetch(`/api/applications/${appId}/accept`, { method: "PATCH" });
+          setJob(data.job);
+          message.success("Worker assigned");
+          // Navigate straight to the conversation created/returned by server
+          if (data.conversationId) navigate(`/chat/${data.conversationId}`);
+          // Refresh requests
+          const refreshed = await authedFetch(`/api/applications?job=${id}`);
+          setApplications(refreshed.applications || []);
+        } catch (e) {
+          message.error(e.message || "Failed to accept");
+          throw e;
+        }
+      },
+    });
+  }
+
+  function decline(appId) {
+    Modal.confirm({
+      title: "Decline this request?",
+      okText: "Decline",
+      onOk: async () => {
+        try {
+          await authedFetch(`/api/applications/${appId}/decline`, { method: "PATCH" });
+          // schema uses "rejected"
+          setApplications((prev) => prev.map(a => a._id === appId ? { ...a, status: "rejected" } : a));
+          message.success("Declined");
+        } catch (e) {
+          message.error(e.message || "Failed to decline");
+          throw e;
+        }
+      },
+    });
+  }
+
+  function markWorkerComplete() {
+    Modal.confirm({
+      title: "Mark work complete?",
+      content: "The hirer will still need to confirm completion.",
+      okText: "Mark complete",
+      onOk: async () => {
+        try {
+          const data = await authedFetch(`/api/jobs/${id}/worker-complete`, { method: "PATCH" });
+          setJob(data.job);
+          message.success("Marked complete — waiting for hirer’s confirmation");
+        } catch (e) {
+          message.error(e.message || "Failed to mark");
+          throw e;
+        }
+      },
+    });
+  }
+
+  function markHirerComplete() {
+    Modal.confirm({
+      title: "Confirm job as completed?",
+      okText: "Complete",
+      onOk: async () => {
+        try {
+          const data = await authedFetch(`/api/jobs/${id}/complete`, { method: "PATCH" });
+          setJob(data.job);
+          message.success("Job marked completed");
+        } catch (e) {
+          message.error(e.message || "Failed to complete");
+          throw e;
+        }
+      },
+    });
+  }
+
+  // Resolve conversation for this job and navigate to chat
+  async function openChatForThisJob() {
+    try {
+      const j = await authedFetch(`/api/conversations/by-job/${id}`);
+      if (j?.conversation?._id) {
+        navigate(`/chat/${j.conversation._id}`);
+      } else {
+        message.info("No conversation yet.");
+      }
+    } catch (e) {
+      message.error(e.message || "Couldn't open chat");
+    }
+  }
+
   async function saveChanges() {
     Modal.confirm({
       title: "Save changes?",
       okText: "Save",
-      cancelText: "Cancel",
       onOk: async () => {
-        setSaving(true);
         try {
+          setSaving(true);
           const payload = {
             ...form,
             budgetMin: form.budgetMin === "" ? undefined : Number(form.budgetMin),
@@ -160,59 +280,53 @@ export default function JobDetail() {
     });
   }
 
-  function deleteJob() {
-    Modal.confirm({
-      title: "Delete this job?",
-      content: "This action cannot be undone.",
-      okText: "Delete",
-      cancelText: "Cancel",
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        setDeleting(true);
-        try {
-          await authedFetch(`/api/jobs/${id}`, { method: "DELETE" });
-          message.success("Job deleted");
-          navigate("/dashboard/hirer");
-        } catch (e) {
-          message.error(e.message || "Failed to delete");
-          throw e;
-        } finally {
-          setDeleting(false);
-        }
-      },
-    });
-  }
-
   // ——— Render ———
 
   if (loading) return <div className="p-6">Loading…</div>;
   if (err) return <div className="p-6 text-red-600">{err}</div>;
   if (!job) return <div className="p-6">Not found</div>;
 
+  const statusPretty = pretty(job.status);
+  const typePretty = pretty(job.jobType);
+  const expPretty = pretty(job.experienceLevel);
+
   return (
     <div className="max-w-3xl mx-auto space-y-4">
-      {/* top card */}
+      {/* Summary */}
       <div className="bg-white border rounded-xl p-6 space-y-2">
         <div className="flex items-start justify-between gap-3">
           <h1 className="text-2xl font-semibold">{job.title}</h1>
 
-          {isOwner && !edit && (
-            <div className="flex gap-2">
-              <button
-                className="px-3 py-1.5 rounded-lg border hover:bg-gray-50"
-                onClick={() => setEdit(true)}
-              >
+          {/* Action strip (right) */}
+          <div className="flex items-center gap-2">
+            {job.status !== "completed" && isOwner && !edit && (
+              <button className="px-3 py-1.5 rounded-lg border" onClick={() => setEdit(true)}>
                 Edit
               </button>
+            )}
+            {job.status !== "open" && (isOwner || isAssignedWorker) && (
               <button
-                className="px-3 py-1.5 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-60"
-                onClick={deleteJob}
-                disabled={deleting}
+                className="px-3 py-1.5 rounded-lg border hover:bg-gray-50"
+                onClick={openChatForThisJob}
               >
-                {deleting ? "Deleting…" : "Delete"}
+                Open Chat
               </button>
-            </div>
-          )}
+            )}
+            {isOwner && job.status !== "completed" && (
+              <button
+                className="px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                onClick={markHirerComplete}
+              >
+                Mark Completed
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 text-sm">
+          <Tag>{statusPretty}</Tag>
+          <Tag>{typePretty}</Tag>
+          <Tag>{expPretty}</Tag>
         </div>
 
         <div className="text-gray-600">{job.description}</div>
@@ -223,16 +337,23 @@ export default function JobDetail() {
           <div>
             Budget: {formatINR(job.budgetMin || 0)} – {formatINR(job.budgetMax || 0)}
           </div>
-          <div>Type: {job.jobType}</div>
-          <div>Experience: {job.experienceLevel}</div>
-          <div>Status: {job.status}</div>
           {job.deadline && <div>Deadline: {new Date(job.deadline).toDateString()}</div>}
           {job.skills?.length ? <div>Skills: {job.skills.join(", ")}</div> : null}
+          {job.workerCompletedAt && (
+            <div className="text-emerald-700">
+              Worker marked complete on {new Date(job.workerCompletedAt).toLocaleString()}
+            </div>
+          )}
+          {job.completedAt && (
+            <div className="text-emerald-700">
+              Completed on {new Date(job.completedAt).toLocaleString()}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Owner edit form */}
-      {isOwner && edit && (
+      {isOwner && edit && job.status !== "completed" && (
         <div className="bg-white border rounded-xl p-6 space-y-3">
           <h2 className="font-semibold">Edit job</h2>
 
@@ -351,13 +472,57 @@ export default function JobDetail() {
         </div>
       )}
 
-      {/* Worker apply box (only when NOT owner) */}
-      {!isOwner && (
+      {/* Applications panel (hirer only, when open) */}
+      {isOwner && job.status === "open" && (
+        <div className="bg-white border rounded-xl p-6 space-y-3">
+          <h2 className="font-semibold">Requests</h2>
+          {appsLoading ? (
+            <div className="text-sm text-gray-500">Loading…</div>
+          ) : applications.length === 0 ? (
+            <div className="text-sm text-gray-500">No requests yet.</div>
+          ) : (
+            <div className="space-y-3">
+              {applications.map((a) => (
+                <div key={a._id} className="border rounded-lg p-3 flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium">
+                      {a.workerId?.name || "Worker"}{" "}
+                      <span className="text-xs text-gray-500">({a.workerId?.email})</span>
+                    </div>
+                    <div className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">
+                      {a.coverLetter || "—"}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500">Status: {pretty(a.status)}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    {a.status === "pending" && (
+                      <>
+                        <button className="px-3 py-1.5 rounded-lg border" onClick={() => accept(a._id)}>
+                          Accept
+                        </button>
+                        <button
+                          className="px-3 py-1.5 rounded-lg border border-red-300 text-red-700"
+                          onClick={() => decline(a._id)}
+                        >
+                          Decline
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Worker apply box (only when NOT owner and job still open) */}
+      {!isOwner && job.status === "open" && (
         <div className="bg-white border rounded-xl p-6 space-y-3">
           <h2 className="font-semibold">Apply to this job</h2>
           <textarea
             className="w-full border rounded px-3 py-2"
-            placeholder="Cover letter"
+            placeholder="Write a short note…"
             value={coverLetter}
             onChange={(e) => setCoverLetter(e.target.value)}
           />
@@ -367,6 +532,19 @@ export default function JobDetail() {
             disabled={!coverLetter.trim()}
           >
             Send Request
+          </button>
+        </div>
+      )}
+
+      {/* Assigned worker controls */}
+      {isAssignedWorker && job.status === "in_progress" && (
+        <div className="bg-white border rounded-xl p-6 space-y-2">
+          <h2 className="font-semibold">Your work</h2>
+          <div className="text-sm text-gray-600">
+            When you’ve finished, mark it complete. The hirer will confirm.
+          </div>
+          <button className="px-4 py-2 rounded border" onClick={markWorkerComplete}>
+            Mark Complete
           </button>
         </div>
       )}

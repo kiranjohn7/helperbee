@@ -4,6 +4,8 @@ const { Schema, model } = mongoose;
 const JobSchema = new Schema(
   {
     hirerId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    workerId: { type: Schema.Types.ObjectId, ref: "User", default: null },
+
     title: { type: String, required: true },
     description: { type: String, required: true },
     category: String,
@@ -28,6 +30,10 @@ const JobSchema = new Schema(
     deadline: Date,
     skills: [String],
     attachments: [String],
+
+    workerCompletedAt: { type: Date, default: null },
+    hirerCompletedAt: { type: Date, default: null },
+    completedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
