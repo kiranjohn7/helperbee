@@ -12,6 +12,7 @@ import jobRoutes from "./routes/jobs.js";
 import applicationRoutes from "./routes/applications.js";
 import conversationRoutes from "./routes/conversations.js";
 import messageRoutes from "./routes/messages.js";
+import uploadRoutes from "./routes/uploads.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -48,6 +49,7 @@ app.use("/api/jobs", jobRoutes);
 app.use("/api/applications", applicationRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/uploads", uploadRoutes);
 
 // 404
 app.use((req, res) => res.status(404).json({ error: "Not found" }));
