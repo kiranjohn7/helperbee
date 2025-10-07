@@ -16,8 +16,10 @@ function dateLabel(d) {
   return new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short", year: "numeric" }).format(d);
 }
 
+/** @param {{ conversationId: string; senderId: string; title?: string }} props */
 export default function ChatWindow({ conversationId, senderId, title = "Chat" }) {
   const listRef = useRef(null);
+  const endRef = useRef(null);        // sentinel for logical scroll
   const taRef = useRef(null);
 
   const [messages, setMessages] = useState([]);
@@ -26,18 +28,23 @@ export default function ChatWindow({ conversationId, senderId, title = "Chat" })
   const [sending, setSending] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
 
-  const load = useCallback(async (signal) => {
-    if (!conversationId) return;
-    try {
-      const j = await authedFetch(`/api/messages?conversationId=${conversationId}`, { signal });
-      setMessages(Array.isArray(j.messages) ? j.messages : []);
-    } catch (e) {
-      if (import.meta.env.DEV) console.error(e); // ✅ use Vite’s flag
-    } finally {
-      setInitialLoading(false);
-    }
-  }, [conversationId]);
+  // Load messages
+  const load = useCallback(
+    async (signal) => {
+      if (!conversationId) return;
+      try {
+        const j = await authedFetch(`/api/messages?conversationId=${conversationId}`, { signal });
+        setMessages(Array.isArray(j.messages) ? j.messages : []);
+      } catch (e) {
+        if (import.meta.env.DEV) console.error(e);
+      } finally {
+        setInitialLoading(false);
+      }
+    },
+    [conversationId]
+  );
 
+  // Initial + poll
   useEffect(() => {
     setInitialLoading(true);
     const ctrl = new AbortController();
@@ -49,12 +56,14 @@ export default function ChatWindow({ conversationId, senderId, title = "Chat" })
     };
   }, [load]);
 
+  // Keep scrolled to bottom (logical)
   useEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
-    if (atBottom) el.scrollTop = el.scrollHeight;
+    if (atBottom) {
+      endRef.current?.scrollIntoView({ behavior: "auto", block: "end", inline: "nearest" });
+    }
   }, [messages, atBottom]);
 
+  // Track bottom proximity
   useEffect(() => {
     const el = listRef.current;
     if (!el) return;
@@ -62,10 +71,11 @@ export default function ChatWindow({ conversationId, senderId, title = "Chat" })
       const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 24;
       setAtBottom(nearBottom);
     };
-    el.addEventListener("scroll", onScroll);
+    el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Auto-grow textarea
   useEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
@@ -74,6 +84,7 @@ export default function ChatWindow({ conversationId, senderId, title = "Chat" })
     ta.style.height = Math.min(ta.scrollHeight, max) + "px";
   }, [text]);
 
+  // Group by day label
   const groups = useMemo(() => {
     const g = [];
     let currentLabel = null;
@@ -92,6 +103,7 @@ export default function ChatWindow({ conversationId, senderId, title = "Chat" })
     return g;
   }, [messages]);
 
+  // Send (optimistic)
   async function send() {
     const body = { conversationId, senderId, text: text.trim() };
     if (!body.text || sending) return;
@@ -104,6 +116,7 @@ export default function ChatWindow({ conversationId, senderId, title = "Chat" })
       text: body.text,
       createdAt: new Date().toISOString(),
     };
+
     setMessages((m) => [...m, optimistic]);
     setText("");
     setSending(true);
@@ -111,9 +124,11 @@ export default function ChatWindow({ conversationId, senderId, title = "Chat" })
     try {
       await authedFetch("/api/messages", { method: "POST", body: JSON.stringify(body) });
       await load();
+      // ensure we land at bottom smoothly
+      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end", inline: "nearest" });
     } catch (e) {
       setMessages((m) => m.filter((x) => x._id !== tempId));
-      if (import.meta.env.DEV) console.error(e); // ✅ use Vite’s flag
+      if (import.meta.env.DEV) console.error(e);
     } finally {
       setSending(false);
     }
@@ -127,14 +142,17 @@ export default function ChatWindow({ conversationId, senderId, title = "Chat" })
   }
 
   return (
-    <div className="flex flex-col rounded-2xl border bg-white shadow-sm overflow-hidden h-[600px]">
+    <section className="relative flex flex-col rounded-2xl border bg-white shadow-sm overflow-hidden h-[600px]">
+      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b bg-gradient-to-r from-indigo-50 to-white">
         <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-full bg-indigo-600 text-white grid place-items-center text-sm font-semibold">HB</div>
-          <div>
-            <div className="font-semibold text-gray-900">{title}</div>
-            <div className="text-xs text-gray-500">Secure conversation</div>
+          <div className="h-8 w-8 rounded-full bg-indigo-600 text-white grid place-items-center text-sm font-semibold">
+            HB
           </div>
+        </div>
+        <div className="min-w-0 flex-1 mx-3">
+          <div className="truncate font-semibold text-gray-900">{title}</div>
+          <div className="text-xs text-gray-500">Secure conversation</div>
         </div>
         <div className="flex items-center gap-2 text-xs text-gray-500">
           <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
@@ -142,7 +160,13 @@ export default function ChatWindow({ conversationId, senderId, title = "Chat" })
         </div>
       </div>
 
-      <div ref={listRef} className="flex-1 overflow-y-auto p-4 bg-gray-50">
+      {/* Messages */}
+      <div
+        ref={listRef}
+        className="flex-1 overflow-y-auto p-4 bg-gray-50"
+        aria-live="polite"
+        aria-relevant="additions"
+      >
         {initialLoading ? (
           <div className="space-y-2">
             <div className="w-2/3 h-6 bg-white/80 rounded-lg animate-pulse" />
@@ -186,20 +210,26 @@ export default function ChatWindow({ conversationId, senderId, title = "Chat" })
             </div>
           ))
         )}
+
+        {/* Sentinel for logical scroll */}
+        <div ref={endRef} />
       </div>
 
+      {/* Jump to latest — logical positioning */}
       {!atBottom && (
         <button
-          onClick={() => {
-            const el = listRef.current;
-            if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-          }}
-          className="absolute bottom-24 right-6 px-2 py-1 text-xs rounded-full border bg-white shadow hover:bg-gray-50"
+          onClick={() =>
+            endRef.current?.scrollIntoView({ behavior: "smooth", block: "end", inline: "nearest" })
+          }
+          className="absolute px-2 py-1 text-xs rounded-full border bg-white shadow hover:bg-gray-50"
+          style={{ insetBlockEnd: "6rem", insetInlineEnd: "1.5rem" }}
+          aria-label="Jump to latest message"
         >
           Jump to latest ↓
         </button>
       )}
 
+      {/* Composer */}
       <div className="border-t bg-white p-3">
         <div className="flex items-end gap-2">
           <textarea
@@ -231,9 +261,11 @@ export default function ChatWindow({ conversationId, senderId, title = "Chat" })
             <span className="hidden sm:inline">{sending ? "Sending" : "Send"}</span>
           </button>
         </div>
-        <div className="mt-1 text-[11px] text-gray-500">Press Enter to send • Shift+Enter for a new line</div>
+        <div className="mt-1 text-[11px] text-gray-500">
+          Press Enter to send • Shift+Enter for a new line
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
