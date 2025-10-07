@@ -1,14 +1,45 @@
-// client/src/pages/profile/WorkerProfile.jsx
-import { useEffect, useState } from "react";
-import { Card, Form, Input, Button, Avatar, Tag, Skeleton, message, Space, Select } from "antd";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Card,
+  Form,
+  Input,
+  Button,
+  Avatar,
+  Tag,
+  Skeleton,
+  message,
+  Space,
+  Select,
+  Divider,
+} from "antd";
 import AvatarUpload from "../../components/AvatarUpload";
 import { authedFetch } from "../../lib/utils";
+import { startCheckout } from "../../lib/checkout";
 
 export default function WorkerProfile() {
   const [form] = Form.useForm();
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [buying, setBuying] = useState(false);
+
+  // Prefer canonical server field; keep fallbacks for safety
+  const boostUntilISO =
+    me?.profileBoostUntil ||
+    me?.profileBoostExpiresAt ||
+    me?.boost?.workerProfile?.expiresAt ||
+    me?.boost?.worker?.expiresAt ||
+    null;
+
+  const boostActive = useMemo(() => {
+    if (!boostUntilISO) return false;
+    const t = new Date(boostUntilISO).getTime();
+    return Number.isFinite(t) && t > Date.now();
+  }, [boostUntilISO]);
+
+  const boostLabel = boostActive
+    ? `Active until ${new Date(boostUntilISO).toLocaleString()}`
+    : "Not active";
 
   useEffect(() => {
     (async () => {
@@ -36,7 +67,8 @@ export default function WorkerProfile() {
   async function onSave(values) {
     setSaving(true);
     try {
-      const payload = { ...values };
+      // don't patch email
+      const payload  = { ...values};
       await authedFetch("/api/users", {
         method: "PATCH",
         body: JSON.stringify(payload),
@@ -47,6 +79,25 @@ export default function WorkerProfile() {
       message.error(e.message || "Failed to save");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function buyProfileBoost() {
+    try {
+      setBuying(true);
+      // IMPORTANT: productType must match your server enum
+      const result = await startCheckout({ productType: "PROFILE_BOOST_7D" });
+      if (result?.ok) {
+        const data = await authedFetch("/api/auth/me");
+        setMe(data.user || null);
+        message.success("Profile Boost activated 🎉");
+      } else {
+        message.info("Checkout closed.");
+      }
+    } catch (e) {
+      message.error(e.message || "Payment failed");
+    } finally {
+      setBuying(false);
     }
   }
 
@@ -62,6 +113,7 @@ export default function WorkerProfile() {
         <Space size="small" wrap className="mt-1">
           <Tag color="purple">Worker</Tag>
           {me?.isVerified ? <Tag color="green">Verified</Tag> : <Tag>Unverified</Tag>}
+          {boostActive && <Tag color="gold">Boosted</Tag>}
         </Space>
       </div>
 
@@ -76,6 +128,7 @@ export default function WorkerProfile() {
                 method: "PATCH",
                 body: JSON.stringify({ avatarUrl: url }),
               });
+              message.success("Avatar updated");
             } catch {
               message.error("Could not save avatar");
             }
@@ -94,14 +147,30 @@ export default function WorkerProfile() {
         ) : (
           <>
             {header}
-            <div className="h-4" />
+
+            {/* Boost section */}
+            <Divider className="!my-4" />
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+              <div>
+                <div className="font-medium">Profile Boost</div>
+                <div className="text-xs text-gray-500">{boostLabel}</div>
+              </div>
+              <div className="flex gap-2">
+                <Button type="primary" loading={buying} onClick={buyProfileBoost}>
+                  {boostActive ? "Extend 7 days — ₹99" : "Boost profile (7 days) — ₹99"}
+                </Button>
+              </div>
+            </div>
+
+            <Divider className="!my-4" />
+
+            {/* Edit form */}
             <Form
               form={form}
               layout="vertical"
               onFinish={onSave}
               initialValues={{ name: "", city: "", about: "", skills: [], avatarUrl: "" }}
             >
-              {/* Email (read-only) */}
               <Form.Item name="email" label="Email">
                 <Input disabled />
               </Form.Item>

@@ -3,11 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Modal, message, Tag } from "antd";
 import { authedFetch, API_URL, formatINR } from "../../lib/utils";
+import { startCheckout } from "../../lib/checkout";
 
 const pretty = (s) => {
   if (!s) return "-";
   const t = String(s).replace(/_/g, " ");
-  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); // "one_time" -> "One time"
+  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
 };
 
 export default function JobDetail() {
@@ -44,6 +45,7 @@ export default function JobDetail() {
 
   // flags
   const [saving, setSaving] = useState(false);
+  const [buying, setBuying] = useState(false);
 
   // Load job + me
   useEffect(() => {
@@ -80,7 +82,10 @@ export default function JobDetail() {
       }
     })();
 
-    return () => { alive = false; ctrl.abort(); };
+    return () => {
+      alive = false;
+      ctrl.abort();
+    };
   }, [id]);
 
   // Ownership / assignment
@@ -92,6 +97,11 @@ export default function JobDetail() {
     () => !!job && !!me && String(job.workerId) === String(me._id) && me.role === "worker",
     [job, me]
   );
+
+  // Featured/Boost state (server sets job.featuredUntil)
+  const featuredUntil = job?.featuredUntil ? new Date(job.featuredUntil) : null;
+  const isFeatured = !!featuredUntil && featuredUntil.getTime() > Date.now();
+  const featuredLabel = isFeatured ? `Featured until ${featuredUntil.toLocaleString()}` : null;
 
   // Seed edit form
   useEffect(() => {
@@ -130,7 +140,9 @@ export default function JobDetail() {
         if (alive) setAppsLoading(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [isOwner, id]);
 
   // ——— Actions ———
@@ -170,9 +182,7 @@ export default function JobDetail() {
           const data = await authedFetch(`/api/applications/${appId}/accept`, { method: "PATCH" });
           setJob(data.job);
           message.success("Worker assigned");
-          // Navigate straight to the conversation created/returned by server
           if (data.conversationId) navigate(`/chat/${data.conversationId}`);
-          // Refresh requests
           const refreshed = await authedFetch(`/api/applications?job=${id}`);
           setApplications(refreshed.applications || []);
         } catch (e) {
@@ -190,9 +200,6 @@ export default function JobDetail() {
       onOk: async () => {
         try {
           await authedFetch(`/api/applications/${appId}/decline`, { method: "PATCH" });
-          // schema uses "rejected"
-          setApplications((prev) => prev.map(a => a._id === appId ? { ...a, status: "rejected" } : a));
-          message.success("Declined");
         } catch (e) {
           message.error(e.message || "Failed to decline");
           throw e;
@@ -234,6 +241,29 @@ export default function JobDetail() {
         }
       },
     });
+  }
+
+  // Buy/extend Featured Job Boost (7 days)
+  async function buyJobBoost() {
+    try {
+      setBuying(true);
+      const result = await startCheckout({ productType: "JOB_BOOST_7D", jobId: id });
+      if (result?.ok) {
+        // reload job so featuredUntil reflects immediately
+        const r = await fetch(`${API_URL}/api/jobs/${id}`, { cache: "no-store" });
+        if (r.ok) {
+          const j = await r.json();
+          setJob(j.job);
+        }
+        message.success("Job featured successfully 🎉");
+      } else {
+        message.info("Checkout closed.");
+      }
+    } catch (e) {
+      message.error(e.message || "Payment failed");
+    } finally {
+      setBuying(false);
+    }
   }
 
   // Resolve conversation for this job and navigate to chat
@@ -299,19 +329,33 @@ export default function JobDetail() {
 
           {/* Action strip (right) */}
           <div className="flex items-center gap-2">
+            {isOwner && job.status !== "completed" && (
+              <button
+                className="px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                onClick={buyJobBoost}
+                disabled={buying}
+                title="Feature your job for 7 days"
+              >
+                {buying
+                  ? "Processing…"
+                  : isFeatured
+                    ? "Extend Feature — ₹199"
+                    : "Feature Job (7 days) — ₹199"}
+              </button>
+            )}
+
             {job.status !== "completed" && isOwner && !edit && (
               <button className="px-3 py-1.5 rounded-lg border" onClick={() => setEdit(true)}>
                 Edit
               </button>
             )}
+
             {job.status !== "open" && (isOwner || isAssignedWorker) && (
-              <button
-                className="px-3 py-1.5 rounded-lg border hover:bg-gray-50"
-                onClick={openChatForThisJob}
-              >
+              <button className="px-3 py-1.5 rounded-lg border hover:bg-gray-50" onClick={openChatForThisJob}>
                 Open Chat
               </button>
             )}
+
             {isOwner && job.status !== "completed" && (
               <button
                 className="px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50"
@@ -323,10 +367,11 @@ export default function JobDetail() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex items-center gap-2 text-sm flex-wrap">
           <Tag>{statusPretty}</Tag>
           <Tag>{typePretty}</Tag>
           <Tag>{expPretty}</Tag>
+          {isFeatured && <Tag color="gold">{featuredLabel}</Tag>}
         </div>
 
         <div className="text-gray-600">{job.description}</div>
@@ -345,9 +390,7 @@ export default function JobDetail() {
             </div>
           )}
           {job.completedAt && (
-            <div className="text-emerald-700">
-              Completed on {new Date(job.completedAt).toLocaleString()}
-            </div>
+            <div className="text-emerald-700">Completed on {new Date(job.completedAt).toLocaleString()}</div>
           )}
         </div>
       </div>
@@ -461,11 +504,7 @@ export default function JobDetail() {
             >
               {saving ? "Saving…" : "Save changes"}
             </button>
-            <button
-              className="px-4 py-2 rounded border"
-              onClick={() => setEdit(false)}
-              type="button"
-            >
+            <button className="px-4 py-2 rounded border" onClick={() => setEdit(false)} type="button">
               Cancel
             </button>
           </div>
@@ -489,9 +528,7 @@ export default function JobDetail() {
                       {a.workerId?.name || "Worker"}{" "}
                       <span className="text-xs text-gray-500">({a.workerId?.email})</span>
                     </div>
-                    <div className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">
-                      {a.coverLetter || "—"}
-                    </div>
+                    <div className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{a.coverLetter || "—"}</div>
                     <div className="mt-1 text-xs text-gray-500">Status: {pretty(a.status)}</div>
                   </div>
                   <div className="flex gap-2">
@@ -540,9 +577,7 @@ export default function JobDetail() {
       {isAssignedWorker && job.status === "in_progress" && (
         <div className="bg-white border rounded-xl p-6 space-y-2">
           <h2 className="font-semibold">Your work</h2>
-          <div className="text-sm text-gray-600">
-            When you’ve finished, mark it complete. The hirer will confirm.
-          </div>
+          <div className="text-sm text-gray-600">When you’ve finished, mark it complete. The hirer will confirm.</div>
           <button className="px-4 py-2 rounded border" onClick={markWorkerComplete}>
             Mark Complete
           </button>
