@@ -34,6 +34,8 @@ const JobSchema = new Schema(
     workerCompletedAt: { type: Date, default: null },
     hirerCompletedAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },
+
+    featuredUntil: { type: Date, default: null },
   },
   { timestamps: true }
 );
