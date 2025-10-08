@@ -1,4 +1,3 @@
-// client/src/components/JobCard.jsx
 import { Link } from "react-router-dom";
 import { formatINR } from "../lib/utils";
 

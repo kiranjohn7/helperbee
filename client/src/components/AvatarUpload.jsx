@@ -17,11 +17,9 @@ export default function AvatarUpload({ onChange, buttonText = "Change photo", cl
 
     try {
       setUploading(true);
-      // 1) get signature & params from our API
       const qs = new URLSearchParams({ filename: file.name, type: file.type });
       const sig = await authedFetch(`/api/uploads/avatar-signature?${qs}`);
 
-      // 2) send file to Cloudinary
       const fd = new FormData();
       fd.append("file", file);
       fd.append("api_key", sig.apiKey);
@@ -36,7 +34,6 @@ export default function AvatarUpload({ onChange, buttonText = "Change photo", cl
       const publicUrl = result.secure_url || result.url;
       if (!publicUrl) throw new Error("No URL returned");
 
-      // 3) tell parent (your profile page already PATCHes /api/users onChange)
       onChange?.(publicUrl);
       message.success("Photo updated");
     } catch (err) {

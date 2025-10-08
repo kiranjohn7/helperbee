@@ -1,4 +1,3 @@
-// client/src/components/Footer.jsx
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
@@ -11,7 +10,7 @@ export default function Footer() {
 
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState(null);
-  const [role, setRole] = useState(null); // "hirer" | "worker" | null
+  const [role, setRole] = useState(null); 
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {

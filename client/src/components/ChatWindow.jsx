@@ -1,4 +1,3 @@
-// client/src/components/ChatWindow.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { authedFetch } from "../lib/utils";

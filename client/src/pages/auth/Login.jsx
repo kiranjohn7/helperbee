@@ -26,6 +26,13 @@ export default function Login() {
 
   const [msgApi, msgCtx] = message.useMessage();
 
+  if (
+    googleProvider &&
+    typeof googleProvider.setCustomParameters === "function"
+  ) {
+    googleProvider.setCustomParameters({ prompt: "select_account" });
+  }
+
   function mapError(code, messageText) {
     switch (code) {
       case "auth/invalid-email":
@@ -37,7 +44,11 @@ export default function Login() {
       case "auth/too-many-requests":
         return "Too many attempts. Please try again later.";
       case "auth/popup-closed-by-user":
-        return "Google sign-in was closed. Please try again.";
+        return "Google sign-in was closed.";
+      case "auth/cancelled-popup-request":
+        return "Sign-in popup was cancelled.";
+      case "auth/popup-blocked":
+        return "Your browser blocked the sign-in popup.";
       case "auth/operation-not-allowed":
         return "This sign-in method is disabled in Firebase Console.";
       default:
@@ -46,11 +57,9 @@ export default function Login() {
   }
 
   async function afterAuthRedirect() {
-    const { user } = await authedFetch("/api/auth/me"); // parsed JSON
-
+    const { user } = await authedFetch("/api/auth/me");
     if (!user) return navigate("/auth/register?onboard=1");
     if (!user.isVerified) return navigate("/auth/register?verify=1");
-
     navigate(user.role === "worker" ? "/dashboard/worker" : "/dashboard/hirer");
   }
 
@@ -69,10 +78,7 @@ export default function Login() {
         remember ? browserLocalPersistence : browserSessionPersistence
       );
       await signInWithEmailAndPassword(auth, email, password);
-
-      // ensure fresh token for /me
       await auth.currentUser?.getIdToken(true);
-
       await afterAuthRedirect();
     } catch (e) {
       const msg = mapError(e.code, e.message);
@@ -83,7 +89,7 @@ export default function Login() {
     }
   }
 
-  // Google
+  // Google Login with safe cancel behavior
   async function loginGoogle() {
     setErr("");
     setLoading(true);
@@ -93,33 +99,69 @@ export default function Login() {
         remember ? browserLocalPersistence : browserSessionPersistence
       );
       await signInWithPopup(auth, googleProvider);
-
       await auth.currentUser?.getIdToken(true);
       await afterAuthRedirect();
     } catch (e) {
+      const CANCEL_ERRORS = new Set([
+        "auth/popup-closed-by-user",
+        "auth/cancelled-popup-request",
+        "auth/user-cancelled",
+      ]);
+
+      // If the user closed the popup, just stop—do NOT redirect.
+      if (CANCEL_ERRORS.has(e.code)) {
+        const msg = mapError(e.code, e.message);
+        setErr(msg);
+        msgApi.info("Google sign-in cancelled.");
+        setLoading(false);
+        return;
+      }
+
+      // If popup was blocked, politely offer full-page redirect.
+      if (e.code === "auth/popup-blocked") {
+        const confirmed = await new Promise((resolve) => {
+          Modal.confirm({
+            title: "Popup blocked",
+            content:
+              "Your browser blocked the Google sign-in popup. Would you like to continue with a full-page redirect instead?",
+            okText: "Continue",
+            cancelText: "Stay here",
+            onOk: () => resolve(true),
+            onCancel: () => resolve(false),
+          });
+        });
+        if (confirmed) {
+          try {
+            await signInWithRedirect(auth, googleProvider);
+            return; // page will redirect
+          } catch (e2) {
+            const msg2 = mapError(e2.code, e2.message);
+            setErr(msg2);
+            msgApi.error(msg2);
+          }
+        }
+        // user declined redirect
+        setLoading(false);
+        return;
+      }
+
+      // Other unexpected errors
       const msg = mapError(e.code, e.message);
       setErr(msg);
-      msgApi.warning(msg);
-
-      // fallback to redirect
-      try {
-        await signInWithRedirect(auth, googleProvider);
-        // getRedirectResult effect will handle after return
-      } catch (e2) {
-        const msg2 = mapError(e2.code, e2.message);
-        setErr(msg2);
-        msgApi.error(msg2);
-        setLoading(false);
-      }
+      msgApi.error(msg);
+      setLoading(false);
     }
   }
 
-  // Handle Google redirect results
+  // Handle Google redirect results (only if we actually redirected)
   useEffect(() => {
+    let active = true;
     (async () => {
       try {
         const res = await getRedirectResult(auth);
+        if (!active) return;
         if (res?.user) {
+          setLoading(true);
           await auth.currentUser?.getIdToken(true);
           await afterAuthRedirect();
         }
@@ -127,8 +169,13 @@ export default function Login() {
         const msg = mapError(e.code, e.message);
         setErr(msg);
         msgApi.error(msg);
+      } finally {
+        if (active) setLoading(false);
       }
     })();
+    return () => {
+      active = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -144,7 +191,7 @@ export default function Login() {
 
     Modal.confirm({
       title: "Send password reset link?",
-      content: `We’ll email a reset link to ${email}.`,
+      content: `We'll email a reset link to ${email}.`,
       okText: "Send",
       cancelText: "Cancel",
       onOk: async () => {
@@ -163,7 +210,6 @@ export default function Login() {
 
   return (
     <div className="min-h-[calc(100vh-64px)] grid place-items-center bg-gradient-to-b from-white via-indigo-50 to-white">
-      {/* antd message portal */}
       {msgCtx}
 
       <div className="w-full max-w-md bg-white border rounded-2xl shadow-sm p-6">
@@ -173,7 +219,9 @@ export default function Login() {
           </div>
         </div>
 
-        <h1 className="mt-3 text-2xl font-semibold text-center">Welcome back</h1>
+        <h1 className="mt-3 text-2xl font-semibold text-center">
+          Welcome back
+        </h1>
         <p className="mt-1 text-sm text-gray-600 text-center">
           Sign in to continue. No hidden fees—ever.
         </p>
@@ -184,7 +232,11 @@ export default function Login() {
           </div>
         ) : null}
 
-        <form onSubmit={loginEmail} className="mt-6 space-y-4" autoComplete="on">
+        <form
+          onSubmit={loginEmail}
+          className="mt-6 space-y-4"
+          autoComplete="on"
+        >
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Email
