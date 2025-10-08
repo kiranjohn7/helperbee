@@ -1,7 +1,6 @@
-// client/src/components/Header.jsx
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { Button } from "antd";
+import { Button, Modal, message } from "antd";
 import { signOut, onAuthStateChanged } from "firebase/auth";
 import { auth } from "../lib/firebase";
 import { authedFetch } from "../lib/utils";
@@ -13,15 +12,13 @@ export default function Header() {
 
   const [user, setUser] = useState(null);
   const [ready, setReady] = useState(false);
-  const [role, setRole] = useState(null); // "hirer" | "worker" | null
+  const [role, setRole] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Close mobile menu on route change
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
 
-  // Watch Firebase auth
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u || null);
@@ -30,27 +27,49 @@ export default function Header() {
     return () => unsub();
   }, []);
 
-  // Load app role (if logged in)
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        if (!user) { setRole(null); return; }
+        if (!user) {
+          if (active) setRole(null);
+          return;
+        }
         const data = await authedFetch("/api/auth/me");
         if (active) setRole(data?.user?.role || null);
       } catch {
         if (active) setRole(null);
       }
     })();
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [user]);
 
-  const logout = async () => {
-    await signOut(auth);
-    navigate("/");
+  const logoutWithConfirm = () => {
+    Modal.confirm({
+      title: "Log out?",
+      content: "You'll be signed out of HelperBee on this device.",
+      okText: "Logout",
+      cancelText: "Cancel",
+      okButtonProps: { danger: true },
+      centered: true,
+      async onOk() {
+        try {
+          await signOut(auth);
+          setRole(null);
+          setUser(null);
+          setMobileOpen(false);
+          message.success("You’ve been logged out.");
+          navigate("/");
+        } catch (e) {
+          message.error("Couldn’t log out. Please try again.");
+          throw e; 
+        }
+      },
+    });
   };
 
-  // Active link style
   const linkCls = useMemo(
     () => (to) =>
       pathname === to
@@ -59,24 +78,30 @@ export default function Header() {
     [pathname]
   );
 
-  // Role-specific destinations
-  const dashHref    = role === "worker" ? "/dashboard/worker" : "/dashboard/hirer";
-  const profileHref = role === "worker" ? "/profile/worker"  : "/profile/hirer";
+  const dashHref = role === "worker" ? "/dashboard/worker" : "/dashboard/hirer";
+  const profileHref = role === "worker" ? "/profile/worker" : "/profile/hirer";
 
-  // Role links (only when logged in)
   const RoleLinks = () =>
     user && role ? (
       <>
-        <Link to={dashHref} className={linkCls(dashHref)}>Dashboard</Link>
-        <Link to={profileHref} className={linkCls(profileHref)}>Profile</Link>
+        <Link to={dashHref} className={linkCls(dashHref)}>
+          Dashboard
+        </Link>
+        <Link to={profileHref} className={linkCls(profileHref)}>
+          Profile
+        </Link>
       </>
     ) : null;
 
   // Always-visible links
   const CommonLinks = () => (
     <>
-      <Link to="/about" className={linkCls("/about")}>About</Link>
-      <Link to="/contact" className={linkCls("/contact")}>Contact</Link>
+      <Link to="/about" className={linkCls("/about")}>
+        About
+      </Link>
+      <Link to="/contact" className={linkCls("/contact")}>
+        Contact
+      </Link>
     </>
   );
 
@@ -87,14 +112,17 @@ export default function Header() {
         <span className="hidden sm:inline text-sm text-gray-600">
           {user?.displayName || user?.email}
         </span>
-        <Button onClick={logout}>Logout</Button>
+        <Button onClick={logoutWithConfirm}>Logout</Button>
       </div>
     ) : (
       <div className="flex items-center gap-2">
         <Link to="/auth/login" className="px-3 py-1.5 border rounded hover:bg-gray-50">
           Login
         </Link>
-        <Link to="/auth/register" className="px-3 py-1.5 rounded bg-black text-white hover:opacity-95">
+        <Link
+          to="/auth/register"
+          className="px-3 py-1.5 rounded bg-black text-white hover:opacity-95"
+        >
           Register
         </Link>
       </div>
@@ -137,12 +165,22 @@ export default function Header() {
             {mobileOpen ? (
               // Close icon
               <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-                <path d="M6 6l12 12M6 18L18 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <path
+                  d="M6 6l12 12M6 18L18 6"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
               </svg>
             ) : (
               // Hamburger icon
               <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-                <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <path
+                  d="M3 6h18M3 12h18M3 18h18"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
               </svg>
             )}
           </button>
@@ -157,18 +195,26 @@ export default function Header() {
               {/* Role links (if logged in) */}
               {user && role && (
                 <>
-                  <Link to={dashHref} className="py-2">{/* keep order first */}Dashboard</Link>
-                  <Link to={profileHref} className="py-2">Profile</Link>
+                  <Link to={dashHref} className="py-2">
+                    Dashboard
+                  </Link>
+                  <Link to={profileHref} className="py-2">
+                    Profile
+                  </Link>
                 </>
               )}
               {/* Common links */}
-              <Link to="/about" className="py-2">About</Link>
-              <Link to="/contact" className="py-2">Contact</Link>
+              <Link to="/about" className="py-2">
+                About
+              </Link>
+              <Link to="/contact" className="py-2">
+                Contact
+              </Link>
               <div className="h-px bg-gray-200 my-2" />
               {/* Auth actions */}
               {ready && user ? (
                 <button
-                  onClick={logout}
+                  onClick={logoutWithConfirm}
                   className="w-full text-left py-2 rounded-md border px-3 hover:bg-gray-50"
                 >
                   Logout

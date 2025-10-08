@@ -1,3 +1,4 @@
+// client/src/pages/jobs/PostJob.jsx
 import { useMemo, useState } from "react";
 import { authedFetch, formatINR } from "../../lib/utils";
 import { useNavigate } from "react-router-dom";
@@ -38,7 +39,6 @@ export default function PostJob() {
   const [err, setErr] = useState("");
   const [ok, setOk] = useState(false);
 
-  // --- JS-safe field setter ---
   function setField(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
@@ -87,7 +87,7 @@ export default function PostJob() {
       description: form.description.trim(),
       category: form.category || "Other",
       status: "open",
-      location: form.isRemote ? "Remote (India)" : form.location.trim(),
+      location: form.isRemote ? "Remote" : form.location.trim(),
       budgetMin: form.budgetMin ? Number(form.budgetMin) : undefined,
       budgetMax: form.budgetMax ? Number(form.budgetMax) : undefined,
       jobType: form.jobType,
@@ -116,15 +116,11 @@ export default function PostJob() {
   return (
     <RoleGate role="hirer" redirectIfLoggedOut="/auth/login">
       <div className="max-w-2xl mx-auto">
-        <form
-          onSubmit={submit}
-          className="bg-white border rounded-2xl p-6 space-y-4"
-        >
+        <form onSubmit={submit} className="bg-white border rounded-2xl p-6 space-y-4">
           <div>
             <h1 className="text-2xl font-semibold">Post a Job</h1>
             <p className="text-sm text-gray-600">
-              Describe the work and your budget. HelperBee is always free—no
-              hidden fees.
+              Describe the work and your budget. HelperBee is always free—no hidden fees.
             </p>
           </div>
 
@@ -141,12 +137,10 @@ export default function PostJob() {
 
           {/* Title */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Title *
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
             <input
               className="w-full border rounded-lg px-3 py-2"
-              placeholder="e.g. Need a React developer for landing page"
+              placeholder="e.g., Need help with a landing page"
               value={form.title}
               onChange={(e) => setField("title", e.target.value)}
               minLength={6}
@@ -157,28 +151,22 @@ export default function PostJob() {
 
           {/* Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Description *
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
             <textarea
               className="w-full border rounded-lg px-3 py-2 min-h-[120px]"
-              placeholder="Describe the task, deliverables, tools, and expectations…"
+              placeholder="Describe the scope, deliverables, timeline, tools, and expectations…"
               value={form.description}
               onChange={(e) => setField("description", e.target.value)}
               minLength={20}
               required
             />
-            <p className="mt-1 text-xs text-gray-500">
-              At least 20 characters.
-            </p>
+            <p className="mt-1 text-xs text-gray-500">At least 20 characters.</p>
           </div>
 
           {/* Category & Experience */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Category *
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
               <select
                 className="w-full border rounded-lg px-3 py-2"
                 value={form.category}
@@ -195,9 +183,7 @@ export default function PostJob() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Experience level
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Experience level</label>
               <select
                 className="w-full border rounded-lg px-3 py-2"
                 value={form.experienceLevel}
@@ -213,9 +199,7 @@ export default function PostJob() {
           {/* Job type & Deadline */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Job type
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Job type</label>
               <select
                 className="w-full border rounded-lg px-3 py-2"
                 value={form.jobType}
@@ -227,9 +211,7 @@ export default function PostJob() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Deadline
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Deadline</label>
               <input
                 type="date"
                 className="w-full border rounded-lg px-3 py-2"
@@ -242,35 +224,23 @@ export default function PostJob() {
           {/* Remote vs On-site */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="flex items-center gap-4">
-              <label className="text-sm font-medium text-gray-700">
-                Work mode
-              </label>
+              <label className="text-sm font-medium text-gray-700">Work mode</label>
               <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  checked={form.isRemote}
-                  onChange={() => setField("isRemote", true)}
-                />
+                <input type="radio" checked={form.isRemote} onChange={() => setField("isRemote", true)} />
                 Remote
               </label>
               <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  checked={!form.isRemote}
-                  onChange={() => setField("isRemote", false)}
-                />
+                <input type="radio" checked={!form.isRemote} onChange={() => setField("isRemote", false)} />
                 On-site
               </label>
             </div>
 
             {!form.isRemote && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Location *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Location *</label>
                 <input
                   className="w-full border rounded-lg px-3 py-2"
-                  placeholder="City, State (India)"
+                  placeholder="City, State/Region (e.g., Toronto, ON · London · Bengaluru)"
                   value={form.location}
                   onChange={(e) => setField("location", e.target.value)}
                   required={!form.isRemote}
@@ -281,58 +251,42 @@ export default function PostJob() {
 
           {/* Budget */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Budget (INR)
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Budget</label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
                 className="w-full border rounded-lg px-3 py-2"
                 inputMode="numeric"
-                placeholder="Min ₹"
+                placeholder="Min amount"
                 value={form.budgetMin}
-                onChange={(e) =>
-                  setField("budgetMin", e.target.value.replace(/\D/g, ""))
-                }
+                onChange={(e) => setField("budgetMin", e.target.value.replace(/\D/g, ""))}
               />
               <input
                 className="w-full border rounded-lg px-3 py-2"
                 inputMode="numeric"
-                placeholder="Max ₹"
+                placeholder="Max amount"
                 value={form.budgetMax}
-                onChange={(e) =>
-                  setField("budgetMax", e.target.value.replace(/\D/g, ""))
-                }
+                onChange={(e) => setField("budgetMax", e.target.value.replace(/\D/g, ""))}
               />
             </div>
             <div className="mt-1 text-xs text-gray-600">
-              {bMin ? formatINR(bMin) : "—"}{" "}
-              {bMax ? `to ${formatINR(bMax)}` : ""}
-              {!budgetValid && (
-                <span className="ml-2 text-red-600">
-                  Min should not exceed Max.
-                </span>
-              )}
+              {bMin ? formatINR(bMin) : "—"} {bMax ? `to ${formatINR(bMax)}` : ""}
+              {!budgetValid && <span className="ml-2 text-red-600">Min should not exceed Max.</span>}
             </div>
           </div>
 
           {/* Skills */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Skills (comma separated)
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Skills (comma separated)</label>
             <input
               className="w-full border rounded-lg px-3 py-2"
-              placeholder="e.g. React, Tailwind, MongoDB"
+              placeholder="e.g., Cleaning, Painting, React, Photography"
               value={form.skillsCSV}
               onChange={(e) => setField("skillsCSV", e.target.value)}
             />
             {skills.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {skills.map((s) => (
-                  <span
-                    key={s}
-                    className="px-2 py-1 text-xs rounded-full bg-gray-100 border"
-                  >
+                  <span key={s} className="px-2 py-1 text-xs rounded-full bg-gray-100 border">
                     {s}
                   </span>
                 ))}
@@ -342,12 +296,10 @@ export default function PostJob() {
 
           {/* Attachments */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Attachment URLs (optional, comma separated)
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Attachment URLs (optional, comma separated)</label>
             <input
               className="w-full border rounded-lg px-3 py-2"
-              placeholder="e.g. https://drive.google.com/..., https://..."
+              placeholder="e.g., https://example.com/spec.pdf, https://drive.google.com/..."
               value={form.attachmentsCSV}
               onChange={(e) => setField("attachmentsCSV", e.target.value)}
             />
@@ -387,9 +339,8 @@ export default function PostJob() {
         </form>
 
         <p className="mt-3 text-xs text-gray-500">
-          Note: If you want to persist <em>jobType</em>,{" "}
-          <em>experienceLevel</em>, <em>deadline</em>, <em>skills</em>, or{" "}
-          <em>attachments</em>, add these fields to your server Job schema.
+          Note: If you want to persist <em>jobType</em>, <em>experienceLevel</em>, <em>deadline</em>, <em>skills</em>, or <em>attachments</em>, add
+          these fields to your server Job schema.
         </p>
       </div>
     </RoleGate>
